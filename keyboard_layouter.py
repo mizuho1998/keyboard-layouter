@@ -1,20 +1,21 @@
-import pcbnew
-import wx
 import json
 import math
 import sys
 import traceback
+
+import pcbnew
+import wx
 
 SWITCH_REF_PREFIX = 'SW'
 DIODE_REF_PREFIX = 'D'
 KEY_UNIT_SIZE_MM = 19.05
 
 KEY_OFFSET = {
-    '1':  0,  # 12.065
-    '1.25':  2.381,  # 14.446
-    '1.5':  4.763,  # 16.828
-    '1.75':  7.144,  # 19.209
-    '2':  9.525,  # 21.590
+    '1': 0,  # 12.065
+    '1.25': 2.381,  # 14.446
+    '1.5': 4.763,  # 16.828
+    '1.75': 7.144,  # 19.209
+    '2': 9.525,  # 21.590
     '2.25': 11.9806,  # 23.971
     '2.75': 16.669,  # 28.734
     '6.25': 50.006,  # 62.071
@@ -41,13 +42,17 @@ DEFAULT_PARAMS = {
         'move': True,
     },
     'diode': {
-        'move': False,
+        'move': True,
         'offset_x_mm': '0',  # -8.6725
         'offset_y_mm': '0',  # 8.59
         'flip': False,
     },
 }
 
+
+WINDOW_SIZE = (600, 370)
+MARGIN_PIX = 10
+INDENT_PIX = 20
 
 class KeyboardLayouter(pcbnew.ActionPlugin):
     def defaults(self):
@@ -57,11 +62,9 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
         self.__version__ = '0.1.0'
 
     def Run(self):
-        self.__gui()
-
-    @property
-    def version(self):
-        return self.__version__
+        frame_title = '%s (%s)' % (self.name, self.version)
+        gui = GUI(frame_title, self.__run)
+        gui.run()
 
     def __run(self, params):
         self.params = params
@@ -178,209 +181,213 @@ class KeyboardLayouter(pcbnew.ActionPlugin):
                     diode.Flip(diode.GetCenter())
                 diode.SetOrientationDegrees(r)
 
-    def __gui(self):
-        WINDOW_SIZE = (600, 270)
-        MARGIN_PIX = 10
-        INDENT_PIX = 20
+    @property
+    def version(self):
+        return self.__version__
 
-        params = DEFAULT_PARAMS.copy()
 
-        def frame_title():
-            return '%s (%s)' % (self.name, self.version)
+class FilePanel(wx.Panel):
+    def __init__(self, parent, params):
+        super(FilePanel, self).__init__(parent, wx.ID_ANY)
+        self.params = params
 
-        def set_initial_checkbox(checkbox, enable, value):
-            if enable:
-                checkbox.Enable()
-            else:
-                checkbox.Disable()
-            checkbox.SetValue(value)
+        text = wx.StaticText(self, wx.ID_ANY, 'JSON file:')
 
-        def set_initial_textctrl(textctrl, enable, value):
-            if enable:
-                textctrl.Enable()
-            else:
-                textctrl.Disable()
-            textctrl.SetValue(str(value))
+        self.textctrl = wx.TextCtrl(self, wx.ID_ANY)
+        GUI.set_initial_textctrl(self.textctrl, True, self.params['json']['file'])
+        self.textctrl.Bind(wx.EVT_TEXT, self.textctrl_handler)
 
-        class FilePanel(wx.Panel):
-            def __init__(self, parent):
-                def textctrl_handler(_):
-                    params['json']['file'] = textctrl.GetValue()
+        button = wx.Button(self, wx.ID_ANY, 'Select')
+        button.Bind(wx.EVT_BUTTON, self.button_handler)
 
-                def button_handler(_):
-                    dialog = wx.FileDialog(None, 'Select a file', '', '',
-                                           'JSON file(*.json)|*.json|All files|*.*',
-                                           wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
-                    if dialog.ShowModal() == wx.ID_OK:
-                        textctrl.SetValue(dialog.GetPath())
-                    else:
-                        textctrl.SetValue('')
+        layout = wx.BoxSizer(wx.HORIZONTAL)
+        layout.Add(text, flag=wx.ALIGN_CENTER)
+        layout.Add(self.textctrl, proportion=1, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
+        layout.Add(button, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
+        self.SetSizer(layout)
 
-                super(FilePanel, self).__init__(parent, wx.ID_ANY)
+    def textctrl_handler(self, _):
+        self.params['json']['file'] = self.textctrl.GetValue()
 
-                text = wx.StaticText(self, wx.ID_ANY, 'JSON file:')
+    def button_handler(self, _):
+        dialog = wx.FileDialog(None, 'Select a file', '', '',
+                               'JSON file(*.json)|*.json|All files|*.*',
+                               wx.FD_OPEN | wx.FD_FILE_MUST_EXIST)
+        if dialog.ShowModal() == wx.ID_OK:
+            self.textctrl.SetValue(dialog.GetPath())
+        else:
+            self.textctrl.SetValue('')
 
-                textctrl = wx.TextCtrl(self, wx.ID_ANY)
-                set_initial_textctrl(textctrl, True, params['json']['file'])
-                textctrl.Bind(wx.EVT_TEXT, textctrl_handler)
+class SwitchPanel(wx.Panel):
+    def __init__(self, parent, params):
+        super(SwitchPanel, self).__init__(parent, wx.ID_ANY)
+        self.params = params
 
-                button = wx.Button(self, wx.ID_ANY, 'Select')
-                button.Bind(wx.EVT_BUTTON, button_handler)
+        checkbox_move = wx.CheckBox(self, wx.ID_ANY, 'Switch')
+        GUI.set_initial_checkbox(checkbox_move, True, self.params['switch']['move'])
+        checkbox_move.Bind(wx.EVT_CHECKBOX, self.checkbox_move_handler)
 
-                layout = wx.BoxSizer(wx.HORIZONTAL)
-                layout.Add(text, flag=wx.ALIGN_CENTER)
-                layout.Add(textctrl, proportion=1, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
-                layout.Add(button, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
-                self.SetSizer(layout)
+        layout = wx.BoxSizer(wx.HORIZONTAL)
+        layout.Add(checkbox_move)
+        self.SetSizer(layout)
 
-        class SwitchPanel(wx.Panel):
-            def __init__(self, parent):
-                def checkbox_move_handler(_):
-                    params['switch']['move'] = checkbox_move.GetValue()
+    def checkbox_move_handler(self, _):
+        self.params['switch']['move'] = checkbox_move.GetValue()
 
-                super(SwitchPanel, self).__init__(parent, wx.ID_ANY)
+class DiodePanel(wx.Panel):
+    def __init__(self, parent, params):
+        super(DiodePanel, self).__init__(parent, wx.ID_ANY)
+        self.params = params
 
-                checkbox_move = wx.CheckBox(self, wx.ID_ANY, 'Switch')
-                set_initial_checkbox(checkbox_move, True, params['switch']['move'])
-                checkbox_move.Bind(wx.EVT_CHECKBOX, checkbox_move_handler)
+        checkbox_move = wx.CheckBox(self, wx.ID_ANY, 'Diode')
+        GUI.set_initial_checkbox(checkbox_move, True, self.params['diode']['move'])
+        checkbox_move.Bind(wx.EVT_CHECKBOX, self.checkbox_move_handler)
 
-                layout = wx.BoxSizer(wx.HORIZONTAL)
-                layout.Add(checkbox_move)
-                self.SetSizer(layout)
+        panel_offset_x_mm = wx.Panel(self, wx.ID_ANY)
+        text_offset_x_mm = wx.StaticText(panel_offset_x_mm, wx.ID_ANY, 'Offset x[mm]:')
+        self.textctrl_offset_x_mm = wx.TextCtrl(panel_offset_x_mm, wx.ID_ANY)
+        GUI.set_initial_textctrl(self.textctrl_offset_x_mm,
+                             self.params['diode']['move'],
+                             self.params['diode']['offset_x_mm'])
+        self.textctrl_offset_x_mm.Bind(wx.EVT_TEXT, self.textctrl_offset_x_mm_handler)
+        layout_offset_x_mm = wx.BoxSizer(wx.HORIZONTAL)
+        layout_offset_x_mm.Add(text_offset_x_mm, flag=wx.ALIGN_CENTER)
+        layout_offset_x_mm.Add(self.textctrl_offset_x_mm, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
+        panel_offset_x_mm.SetSizer(layout_offset_x_mm)
 
-        class DiodePanel(wx.Panel):
-            def __init__(self, parent):
-                def checkbox_move_handler(_):
-                    params['diode']['move'] = checkbox_move.GetValue()
-                    if params['diode']['move']:
-                        textctrl_offset_x_mm.Enable()
-                        textctrl_offset_y_mm.Enable()
-                        checkbox_flip.Enable()
-                    else:
-                        textctrl_offset_x_mm.Disable()
-                        textctrl_offset_y_mm.Disable()
-                        checkbox_flip.Disable()
+        panel_offset_y_mm = wx.Panel(self, wx.ID_ANY)
+        text_offset_y_mm = wx.StaticText(panel_offset_y_mm, wx.ID_ANY, 'Offset y[mm]:')
+        self.textctrl_offset_y_mm = wx.TextCtrl(panel_offset_y_mm, wx.ID_ANY)
+        GUI.set_initial_textctrl(self.textctrl_offset_y_mm,
+                             self.params['diode']['move'],
+                             self.params['diode']['offset_y_mm'])
+        self.textctrl_offset_y_mm.Bind(wx.EVT_TEXT, self.textctrl_offset_y_mm_handler)
+        layout_offset_y_mm = wx.BoxSizer(wx.HORIZONTAL)
+        layout_offset_y_mm.Add(text_offset_y_mm, flag=wx.ALIGN_CENTER)
+        layout_offset_y_mm.Add(self.textctrl_offset_y_mm, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
+        panel_offset_y_mm.SetSizer(layout_offset_y_mm)
 
-                def textctrl_offset_x_mm_handler(_):
-                    params['diode']['offset_x_mm'] = textctrl_offset_x_mm.GetValue()
+        self.checkbox_flip = wx.CheckBox(self, wx.ID_ANY, 'Flip')
+        GUI.set_initial_checkbox(self.checkbox_flip, False, self.params['diode']['move'])
+        self.checkbox_flip.Bind(wx.EVT_CHECKBOX, self.checkbox_flip_handler)
 
-                def textctrl_offset_y_mm_handler(_):
-                    params['diode']['offset_y_mm'] = textctrl_offset_y_mm.GetValue()
+        layout = wx.BoxSizer(wx.VERTICAL)
+        layout.Add(checkbox_move)
+        layout.Add(panel_offset_x_mm, flag=wx.LEFT, border=INDENT_PIX)
+        layout.Add(panel_offset_y_mm, flag=wx.LEFT, border=INDENT_PIX)
+        layout.Add(self.checkbox_flip, flag=wx.LEFT, border=INDENT_PIX)
+        self.SetSizer(layout)
 
-                def checkbox_flip_handler(_):
-                    params['diode']['flip'] = checkbox_flip.GetValue()
+    def checkbox_move_handler(self, _):
+        self.params['diode']['move'] = checkbox_move.GetValue()
+        if self.params['diode']['move']:
+            self.textctrl_offset_x_mm.Enable()
+            self.textctrl_offset_y_mm.Enable()
+            self.checkbox_flip.Enable()
+        else:
+            self.textctrl_offset_x_mm.Disable()
+            self.textctrl_offset_y_mm.Disable()
+            self.checkbox_flip.Disable()
 
-                super(DiodePanel, self).__init__(parent, wx.ID_ANY)
+    def textctrl_offset_x_mm_handler(self, _):
+        self.params['diode']['offset_x_mm'] = self.textctrl_offset_x_mm.GetValue()
 
-                checkbox_move = wx.CheckBox(self, wx.ID_ANY, 'Diode')
-                set_initial_checkbox(checkbox_move, True, params['diode']['move'])
-                checkbox_move.Bind(wx.EVT_CHECKBOX, checkbox_move_handler)
+    def textctrl_offset_y_mm_handler(self, _):
+        self.params['diode']['offset_y_mm'] = self.textctrl_offset_y_mm.GetValue()
 
-                panel_offset_x_mm = wx.Panel(self, wx.ID_ANY)
-                text_offset_x_mm = wx.StaticText(panel_offset_x_mm, wx.ID_ANY, 'Offset x[mm]:')
-                textctrl_offset_x_mm = wx.TextCtrl(panel_offset_x_mm, wx.ID_ANY)
-                set_initial_textctrl(textctrl_offset_x_mm,
-                                     params['diode']['move'],
-                                     params['diode']['offset_x_mm'])
-                textctrl_offset_x_mm.Bind(wx.EVT_TEXT, textctrl_offset_x_mm_handler)
-                layout_offset_x_mm = wx.BoxSizer(wx.HORIZONTAL)
-                layout_offset_x_mm.Add(text_offset_x_mm, flag=wx.ALIGN_CENTER)
-                layout_offset_x_mm.Add(textctrl_offset_x_mm, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
-                panel_offset_x_mm.SetSizer(layout_offset_x_mm)
+    def checkbox_flip_handler(self, _):
+        self.params['diode']['flip'] = self.checkbox_flip.GetValue()
 
-                panel_offset_y_mm = wx.Panel(self, wx.ID_ANY)
-                text_offset_y_mm = wx.StaticText(panel_offset_y_mm, wx.ID_ANY, 'Offset y[mm]:')
-                textctrl_offset_y_mm = wx.TextCtrl(panel_offset_y_mm, wx.ID_ANY)
-                set_initial_textctrl(textctrl_offset_y_mm,
-                                     params['diode']['move'],
-                                     params['diode']['offset_y_mm'])
-                textctrl_offset_y_mm.Bind(wx.EVT_TEXT, textctrl_offset_y_mm_handler)
-                layout_offset_y_mm = wx.BoxSizer(wx.HORIZONTAL)
-                layout_offset_y_mm.Add(text_offset_y_mm, flag=wx.ALIGN_CENTER)
-                layout_offset_y_mm.Add(textctrl_offset_y_mm, flag=wx.ALIGN_CENTER | wx.LEFT, border=MARGIN_PIX)
-                panel_offset_y_mm.SetSizer(layout_offset_y_mm)
+class RunPanel(wx.Panel):
+    def __init__(self, parent, callback, top_frame, params):
+        super(RunPanel, self).__init__(parent, wx.ID_ANY)
+        self.callback = callback
+        self.top_frame = top_frame
+        self.params = params
 
-                checkbox_flip = wx.CheckBox(self, wx.ID_ANY, 'Flip')
-                set_initial_checkbox(checkbox_flip, False, params['diode']['move'])
-                checkbox_flip.Bind(wx.EVT_CHECKBOX, checkbox_flip_handler)
+        button = wx.Button(self, wx.ID_ANY, 'Run')
+        button.Bind(wx.EVT_BUTTON, self.button_run_handler)
+        layout = wx.BoxSizer(wx.VERTICAL)
+        layout.Add(button, 0, wx.GROW)
+        self.SetSizer(layout)
 
-                layout = wx.BoxSizer(wx.VERTICAL)
-                layout.Add(checkbox_move)
-                layout.Add(panel_offset_x_mm, flag=wx.LEFT, border=INDENT_PIX)
-                layout.Add(panel_offset_y_mm, flag=wx.LEFT, border=INDENT_PIX)
-                layout.Add(checkbox_flip, flag=wx.LEFT, border=INDENT_PIX)
-                self.SetSizer(layout)
+    def button_run_handler(self, _):
+        try:
+            p = self.__pre_process(self.params)
+            status, messages = self.callback(p)
+            if status == 'warning':
+                wx.MessageBox('\n'.join(messages), 'Warning', style=wx.OK | wx.ICON_WARNING)
+            self.top_frame.Close(True)
+        except IOError:
+            wx.MessageBox('Keyboard Layouter cannot open this file.\n\n%s' % self.params['json']['file'],
+                          'Error: File cannot be opened', style=wx.OK | wx.ICON_ERROR)
+        except ValueError:
+            wx.MessageBox('Keyboard Layouter cannot parse this json file.\n\n%s' % self.params['json']['file'],
+                          'Error: File cannot be parsed', style=wx.OK | wx.ICON_ERROR)
+        except Exception:
+            t, v, tb = sys.exc_info()
+            wx.MessageBox('\n'.join(traceback.format_exception(t, v, tb)),
+                          'Execution failed', style=wx.OK | wx.ICON_ERROR)
+        finally:
+            return
 
-        class RunPanel(wx.Panel):
-            def __init__(self, parent, callback, top_frame):
-                def button_run_handler(_):
-                    try:
-                        p = self.__pre_process(params)
-                        status, messages = callback(p)
-                        if status == 'warning':
-                            wx.MessageBox('\n'.join(messages), 'Warning', style=wx.OK | wx.ICON_WARNING)
-                        top_frame.Close(True)
-                    except IOError:
-                        wx.MessageBox('Keyboard Layouter cannot open this file.\n\n%s' % params['json']['file'],
-                                      'Error: File cannot be opened', style=wx.OK | wx.ICON_ERROR)
-                    except ValueError:
-                        wx.MessageBox('Keyboard Layouter cannot parse this json file.\n\n%s' % params['json']['file'],
-                                      'Error: File cannot be parsed', style=wx.OK | wx.ICON_ERROR)
-                    except Exception:
-                        t, v, tb = sys.exc_info()
-                        wx.MessageBox('\n'.join(traceback.format_exception(t, v, tb)),
-                                      'Execution failed', style=wx.OK | wx.ICON_ERROR)
-                    finally:
-                        return
+    def __pre_process(self, p):
+        p['json']['data'] = self.__load_json(p)
+        p['diode']['offset_x_mm'] = float(p['diode']['offset_x_mm'])
+        p['diode']['offset_y_mm'] = float(p['diode']['offset_y_mm'])
+        return p
 
-                super(RunPanel, self).__init__(parent, wx.ID_ANY)
-                button = wx.Button(self, wx.ID_ANY, 'Run')
-                button.Bind(wx.EVT_BUTTON, button_run_handler)
+    def __load_json(self, p):
+        with open(p['json']['file'], 'r') as f:
+            json_data = json.load(f)
 
-                layout = wx.BoxSizer(wx.VERTICAL)
-                layout.Add(button, 0, wx.GROW)
-                self.SetSizer(layout)
+            # remove keyboard metadata
+            if type(json_data[0]) is dict:
+                json_data = json_data[1:]
 
-            def __pre_process(self, p):
-                p['json']['data'] = self.__load_json(p)
-                p['diode']['offset_x_mm'] = float(p['diode']['offset_x_mm'])
-                p['diode']['offset_y_mm'] = float(p['diode']['offset_y_mm'])
-                return p
+        return json_data
 
-            @staticmethod
-            def __load_json(p):
-                with open(p['json']['file'], 'r') as f:
-                    json_data = json.load(f)
 
-                    # remove keyboard metadata
-                    if type(json_data[0]) is dict:
-                        json_data = json_data[1:]
-                return json_data
+class GUI(wx.Frame):
+    def __init__(self, frame_title, callback):
+        super(GUI, self).__init__(None, wx.ID_ANY, frame_title, size=WINDOW_SIZE)
 
-        class TopFrame(wx.Frame):
-            def __init__(self, title, callback):
-                super(TopFrame, self).__init__(None, wx.ID_ANY, title, size=WINDOW_SIZE)
+        self.params = DEFAULT_PARAMS.copy()
+        self.callback = callback
 
-                root_panel = wx.Panel(self, wx.ID_ANY)
+    def run(self):
+        root_panel = wx.Panel(self, wx.ID_ANY)
+        file_panel = FilePanel(root_panel, self.params)
+        switch_panel = SwitchPanel(root_panel, self.params)
+        diode_panel = DiodePanel(root_panel, self.params)
+        run_panel = RunPanel(root_panel, self.callback, self, self.params)
 
-                file_panel = FilePanel(root_panel)
-                switch_panel = SwitchPanel(root_panel)
-                diode_panel = DiodePanel(root_panel)
-                run_panel = RunPanel(root_panel, callback, self)
+        root_layout = wx.BoxSizer(wx.VERTICAL)
+        root_layout.Add(file_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
+        root_layout.Add(switch_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
+        root_layout.Add(diode_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
+        root_layout.Add(run_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
+        root_panel.SetSizer(root_layout)
+        root_layout.Fit(root_panel)
 
-                root_layout = wx.BoxSizer(wx.VERTICAL)
-                root_layout.Add(file_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
-                root_layout.Add(switch_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
-                root_layout.Add(diode_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
-                root_layout.Add(run_panel, 0, wx.GROW | wx.ALL, border=MARGIN_PIX)
+        self.Center()
+        self.Show()
 
-                root_panel.SetSizer(root_layout)
-                root_layout.Fit(root_panel)
+    @staticmethod
+    def set_initial_textctrl(textctrl, enable, value):
+        if enable:
+            textctrl.Enable()
+        else:
+            textctrl.Disable()
+        textctrl.SetValue(str(value))
 
-        frame = TopFrame(frame_title(), self.__run)
-        frame.Center()
-        frame.Show()
+    @staticmethod
+    def set_initial_checkbox(checkbox, enable, value):
+        if enable:
+            checkbox.Enable()
+        else:
+            checkbox.Disable()
+        checkbox.SetValue(value)
 
 
 KeyboardLayouter().register()
-
